@@ -1,15 +1,19 @@
 <?php
 if (!defined('__TYPECHO_ROOT_DIR__')) exit;
 function themeConfig($form) {
-	$logo = new Typecho_Widget_Helper_Form_Element_Text('logo', NULL, NULL, _t('logo'), _t('图片链接'));
-	$form->addInput($logo);
 	$t = new Typecho_Widget_Helper_Form_Element_Text('t', NULL, NULL, _t('标题'), _t('Kiosr'));
 	$form->addInput($t);
+
 	$s = new Typecho_Widget_Helper_Form_Element_Text('s', NULL, NULL, _t('副标题'), _t('魔法'));
 	$form->addInput($s);
-  $dh = new Typecho_Widget_Helper_Form_Element_Textarea('dh', NULL, NULL, _t('导航'), _t('导航'));
-  $form->addInput($dh);
+
+    $dh = new Typecho_Widget_Helper_Form_Element_Textarea('dh', NULL, NULL, _t('导航'), _t('导航'));
+    $form->addInput($dh);
+
+	$fl = new Typecho_Widget_Helper_Form_Element_Text('fl', NULL, NULL, _t('目录'), _t('输入目录ID及需要显示的名称 如 1,默认分类;'));
+	$form->addInput($fl);
 }
+
 function getCommentAt($coid){
 	$db   = Typecho_Db::get();
 	$prow = $db->fetchRow($db->select('parent')
@@ -22,7 +26,7 @@ function getCommentAt($coid){
 			->where('coid = ? AND status = ?', $parent, 'approved'));
 		$author = $arow['author'];
 		if($author){
-			$href   = ' 回复 <a class="at" uid="'.$parent.'" onclick="scrollt(\'comment-'.$parent.'\'); return false;">@'.$author.'</a>';
+			$href   = ' <a class="at" uid="'.$parent.'" onclick="scrollt(\'comment-'.$parent.'\'); return false;">@'.$author.'</a>';
 		}else{
 			$href   = '<a href="javascript:void(0)">评论审核中···</a>';
 		}
@@ -31,6 +35,7 @@ function getCommentAt($coid){
 		echo "";
 	}
 }
+
 function themeurl($i){
 return Helper::options()->themeUrl.$i;
 }
@@ -43,74 +48,75 @@ function is_ajax()
     }
     return false;
 }
-function timesince($older_date,$comment_date = false) {
-$chunks = array(
-array(86400 , '天'),
-array(3600 , '小时'),
-array(60 , '分钟'),
-array(1 , '秒'),
-);
-$newer_date = time();
-$since = abs($newer_date - $older_date);
-for ($i = 0, $j = count($chunks); $i < $j; $i++){
-$seconds = $chunks[$i][0];
-$name = $chunks[$i][1];
-if (($count = floor($since / $seconds)) != 0) break;
-}
-$output = $count.$name.'前';
 
-return $output;
-}
-function art_count ($cid){
-$db=Typecho_Db::get ();
-$rs=$db->fetchRow ($db->select ('table.contents.text')->from ('table.contents')->where ('table.contents.cid=?',$cid)->order ('table.contents.cid',Typecho_Db::SORT_ASC)->limit (1));
-$text = preg_replace("/[^\x{4e00}-\x{9fa5}]/u", "", $rs['text']);
-$num = mb_strlen($text,'UTF-8');
-$time = ceil($num / 300);
-return $num.' - 阅读大约需要'.$time.'分钟';
-}
-function get_post_view($archive) {
-	$db = Typecho_Db::get();
-	$cid = $archive->cid;
-	if (!array_key_exists('views', $db->fetchRow($db->select()->from('table.contents')))) {
-		$db->query('ALTER TABLE `'.$db->getPrefix().'contents` ADD `views` INT(10) DEFAULT 0;');
+function timesince($older_date,$comment_date = false) {
+	$chunks = array(
+		array(86400 , '天'),
+		array(3600 , '小时'),
+		array(60 , '分钟'),
+		array(1 , '秒'),
+	);
+	$newer_date = time();
+	$since = abs($newer_date - $older_date);
+
+	for ($i = 0, $j = count($chunks); $i < $j; $i++){
+		$seconds = $chunks[$i][0];
+		$name = $chunks[$i][1];
+		if (($count = floor($since / $seconds)) != 0) break;
 	}
-	$exist = $db->fetchRow($db->select('views')->from('table.contents')->where('cid = ?', $cid))['views'];
-	if ($archive->is('single')) {
-		$cookie = Typecho_Cookie::get('contents_views');
-		$cookie = $cookie ? explode(',', $cookie) : array();
-		if (!in_array($cid, $cookie)) {
-			$db->query($db->update('table.contents')
-				->rows(array('views' => (int)$exist+1))
-				->where('cid = ?', $cid));
-			$exist = (int)$exist+1;
-			array_push($cookie, $cid);
-			$cookie = implode(',', $cookie);
-			Typecho_Cookie::set('contents_views', $cookie);
-		}
-	}
-	return $exist;
+	$output = $count.$name.'前';
+
+	return $output;
 }
 function themeInit($archive){
+	$db = Typecho_Db::get();
 	if ($archive->is('single')){$archive->content = url($archive->content);};
- 	Helper::options()->commentsMaxNestingLevels = 30;
+ 	Helper::options()->commentsMaxNestingLevels = 30; /*评论30层*/
 	Helper::options()->commentsAntiSpam = false; 
-    if ($archive->is('archive', 404)){$path_info = trim($archive->request->getPathinfo(), '/');
-	if(strpos($path_info,".md") > 0){
-		$right = strpos($path_info, '.');
-		$id=substr($path_info, 0, $right);
-		$db = Typecho_Db::get();
-		$t = $db->fetchRow($db->select('title','text')->from('table.contents')->where('cid = ?', $id));
-		header( "HTTP/1.1 200 OK" );
-		echo '<h3>'.$t['title'].'</h3>'.'<pre style="word-wrap: break-word; white-space: pre-wrap;">'.htmlentities(strtr($t['text'],array("<!--markdown-->" => ''))).'</pre>';
-	exit;
-	}}
+	$parser = new HyperDown();
+    if ($archive->is('archive', 404)){
+    	$path_info = trim($archive->request->getPathinfo(), '/');
+		if(strpos($path_info,".md") > 0){
+			$right = strpos($path_info, '.');
+			$id=substr($path_info, 0, $right);
+			$t = $db->fetchRow($db->select('title','text')->from('table.contents')->where('cid = ?', $id));
+			header( "HTTP/1.1 200 OK" );
+			echo '<h3>'.$t['title'].'</h3>'.'<pre style="word-wrap: break-word; white-space: pre-wrap;">'.htmlentities(strtr($t['text'],array("<!--markdown-->" => ''))).'</pre>';
+		exit;
+		}
+		if($archive->request->isPost()){
+			if($path_info=="kiosr.sb"){
+				$text = $_POST['text'];//新的评论内容
+				$coid = $_POST['coid'];//评论id
+				$cid = $_POST['cid'];//文章id
+				$created=$db->fetchRow($db->select('created')->from('table.comments')->where('cid = ?', $cid)->where('coid = ?', $coid));//取出评论时间戳
+				$timeD = (time()-$created['created']);//接收到请求的时间戳减去评论时间戳
+				if( $timeD < 60 &&$timeD > 0 ){//小于60秒
+					$update = $db->update('table.comments')->rows(array('text'=>$text))->where('cid = ?', $cid)->where('coid = ?', $coid);//执行修改
+					$updateRows = $db->query($update);//执行结果
+					if($updateRows == "1"){
+						$updateRows ='1::text::'.$parser->makeHtml($text);
+					}else if($updateRows == "0"){
+						$updateRows ='0::text::0';
+					}else{
+						$updateRows ='2::text::0';
+					}
+				}else{
+					$updateRows = '3::text::草泥马臭傻逼';
+				}
+              	header( "HTTP/1.1 200 OK" );
+				echo $updateRows;//打印执行结果
+			}
+			exit;
+		}
+	}
 }
+
+
 function url($content){
-  $content = preg_replace('#<a(.*?) href="([^"]*/)?(([^"/]*)\.[^"]*)"(.*?)>#','<a$1 class="link" href="$2$3"$5 target="_blank">', $content);
-  $content = preg_replace('#<img(.*?) src="([^"]*/)?(([^"/]*)\.[^"]*)"(.*?) alt="(.*?)"(.*?)>#','<div style="display: inline-block;position:relative"><img$1 src="'.themeurl('/1.jpg').'" data-src="$2$3"$5$7"><div></div></div>', $content);
-  $content = preg_replace('#<pre>([\s\S]*?)<\/pre>#','<div style="background:#eeeeee;border:1px solid #e5e5e5;border-bottom-width:0;padding:0 5px;">Code</div><pre>$1$2$3</pre>', $content);
-  return $content;}
+  $content = preg_replace('#<a(.*?) href="([^"]*/)?(([^"/]*)\.[^"]*)"(.*?)>#','<a$1 href="$2$3"$5 target="_blank">', $content);
+  $content = preg_replace('#<img(.*?) src="([^"]*/)?(([^"/]*)\.[^"]*)"(.*?)>#','<div style="max-width:100%;display:inline-block;background:rgb(181, 191, 194) none repeat scroll 0% 0%;border-radius:5px"><img$1 class="ani" data-src="$2$3"></div>', $content);
+  return insert_spacing($content);}
 function getSubstr($str, $leftStr, $rightStr)
 {
 	$left = strpos($str, $leftStr);
@@ -118,26 +124,14 @@ function getSubstr($str, $leftStr, $rightStr)
 	if($left < 0 or $right < $left) return '';
 	return substr($str, $left + strlen($leftStr), $right-$left-strlen($leftStr));
 }
-function getGravatar($i){
-if(preg_match('|^[1-9]\d{4,10}@qq\.com$|i',$i)){
-	$img = curl_init();
-	curl_setopt($img, CURLOPT_URL, "https://ptlogin2.qq.com/getface?appid=0&imgtype=3&uin=".$i."&tdsourcetag=s_pctim_aiomsg");
-	curl_setopt($img, CURLOPT_HEADER, 0);
-	curl_setopt($img, CURLOPT_SSL_VERIFYPEER, false);
-	curl_setopt($img, CURLOPT_RETURNTRANSFER, 1);
-	$img_url = curl_exec($img);
-	curl_close($img);
-	$img_url_a = getSubstr($img_url,"\":\"","\"})");
-	return $img_url_a;
-}else{
-	$host = 'https://sdn.geekzu.org/';
-	$url = '/avatar/';
-	$size = '80';
-	$rating = Helper::options()->commentsAvatarRating;
-	$hash = md5(strtolower($i));
-	$avatar = $host . $url . $hash . '?s=' . $size . '&r=' . $rating . '&d=monsterid';
-	return $avatar;
-	}
+
+function img(){
+	return "data:image/svg+xml,%3Csvg viewBox='0 0 1024 1024' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M811 640V341H213v278l60-56 115 98 226-196 197 175zm85-384v512H128V256h768z' fill='%23999'/%3E%3C/svg%3E";
+}
+function insert_spacing($str) {
+  $str = preg_replace('/([\x{4e00}-\x{9fa5}]+)([A-Za-z0-9_]+)/u', '${1} ${2}', $str);
+  $str = preg_replace('/([A-Za-z0-9_]+)([\x{4e00}-\x{9fa5}]+)/u', '${1} ${2}', $str);
+  return $str;
 }
 class cacheFile
 {
@@ -168,6 +162,37 @@ class cacheFile
 		}
 	}
 }
+
+function getCatList($a,$b) {
+	if($a){
+		$db = Typecho_Db::get();
+		$items = $db->fetchAll($db->select()->from('table.metas')->where('type = ?','category'));
+		$list = getTree($items,$a,"");
+	    echo "<div>"."<ul><li>".$b.$list."</li></ul></div>";
+	}
+}
+function getTree($data, $id, $i) {
+	$html = '';
+	foreach($data as $k => $v){
+	   if($v['parent'] == $id){
+			$html .= "<li><a href=\"".Helper::options()->siteUrl.$v['slug']."\" class=\"item\">".$v['name']."</a>"; 
+			$html .= getTree($data, $v['mid'],"");
+			$html = $html."</li>";
+		}
+	}
+	return $html ? '<em></em><ul'.$i.'>'.$html.'</ul>' : $html ;
+}
+function getExplode($str){
+	if($str){
+		$arr = explode("；",$str);
+		foreach($arr as $u){
+		    $strarr = explode("，",$u);
+		        getCatList($strarr[0],$strarr[1]);
+		}
+    }
+}
+if(!file_exists($flag)) {
+  touch($flag);
 $TheFile = dirname(__FILE__).'/caches/cache.json';
 $cacheFile = new cacheFile();
 $vowels = array("[", "{","]","}","<",">","\r\n", "\r", "\n","-","'",'"','`'," ",":",";",'\\',"	");
@@ -190,9 +215,10 @@ Typecho_Widget::widget('Widget_Metas_Category_List')->to($category);
 	$output = substr($output,0,strlen($output)-1);
 $data = '['.$output.']';
 if (file_exists($TheFile)) {
-  if ( time() - filemtime( $TheFile) > 30){
+  if ( time() - filemtime( $TheFile) > 600){
   $cacheFile->cacheData('cache', $data);
-  };
+  }; //5分钟300秒，时间可以自己调整
 } else {
   $cacheFile->cacheData('cache', $data);
 };
+}
