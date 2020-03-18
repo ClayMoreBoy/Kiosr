@@ -9,11 +9,7 @@ function themeConfig($form) {
 
     $dh = new Typecho_Widget_Helper_Form_Element_Textarea('dh', NULL, NULL, _t('导航'), _t('导航'));
     $form->addInput($dh);
-
-	$fl = new Typecho_Widget_Helper_Form_Element_Text('fl', NULL, NULL, _t('目录'), _t('输入目录ID及需要显示的名称 如 1,默认分类;'));
-	$form->addInput($fl);
 }
-
 function getCommentAt($coid){
 	$db   = Typecho_Db::get();
 	$prow = $db->fetchRow($db->select('parent')
@@ -21,19 +17,30 @@ function getCommentAt($coid){
 		->where('coid = ? AND status = ?', $coid, 'approved'));
 	$parent = $prow['parent'];
 	if ($parent != "0") {
-		$arow = $db->fetchRow($db->select('author')
+		$arow = $db->fetchRow($db->select('author','status')
 			->from('table.comments')
-			->where('coid = ? AND status = ?', $parent, 'approved'));
+			->where('coid = ?', $parent));
 		$author = $arow['author'];
+		$status = $arow['status'];
 		if($author){
-			$href   = ' <a class="at" uid="'.$parent.'" onclick="scrollt(\'comment-'.$parent.'\'); return false;">@'.$author.'</a>';
-		}else{
-			$href   = '<a href="javascript:void(0)">评论审核中···</a>';
+			if($status=='approved'){
+				$href   = ' <a class="at" uid="'.$parent.'" onclick="scrollt(\'comment-'.$parent.'\'); return false;">@'.$author.'</a>';
+			}else if($status=='waiting'){
+				$href   = '<a href="javascript:void(0)">评论审核中···</a>';
+			}
 		}
 		echo $href;
 	} else {
 		echo "";
 	}
+}
+
+function getgetCommentIp($ip,$cid){
+	$db   = Typecho_Db::get();
+	$i = $db->fetchRow($db->select('coid')
+		->from('table.comments')
+		->where('ip = ?', $ip)->order('created',Typecho_Db::SORT_DESC));
+	echo '<a class="none coid">'.$i['coid'].'</a><a class="none cid">'.$cid.'</a>';
 }
 
 function themeurl($i){
@@ -52,8 +59,8 @@ function is_ajax()
 function timesince($older_date,$comment_date = false) {
 	$chunks = array(
 		array(86400 , '天'),
-		array(3600 , '小时'),
-		array(60 , '分钟'),
+		array(3600 , '时'),
+		array(60 , '分'),
 		array(1 , '秒'),
 	);
 	$newer_date = time();
@@ -64,10 +71,11 @@ function timesince($older_date,$comment_date = false) {
 		$name = $chunks[$i][1];
 		if (($count = floor($since / $seconds)) != 0) break;
 	}
-	$output = $count.$name.'前';
+	$output = $count.$name;
 
 	return $output;
 }
+
 function themeInit($archive){
 	$db = Typecho_Db::get();
 	if ($archive->is('single')){$archive->content = url($archive->content);};
@@ -86,37 +94,54 @@ function themeInit($archive){
 		}
 		if($archive->request->isPost()){
 			if($path_info=="kiosr.sb"){
-				$text = $_POST['text'];//新的评论内容
-				$coid = $_POST['coid'];//评论id
-				$cid = $_POST['cid'];//文章id
-				$created=$db->fetchRow($db->select('created')->from('table.comments')->where('cid = ?', $cid)->where('coid = ?', $coid));//取出评论时间戳
-				$timeD = (time()-$created['created']);//接收到请求的时间戳减去评论时间戳
-				if( $timeD < 60 &&$timeD > 0 ){//小于60秒
-					$update = $db->update('table.comments')->rows(array('text'=>$text))->where('cid = ?', $cid)->where('coid = ?', $coid);//执行修改
-					$updateRows = $db->query($update);//执行结果
+				$text = $_POST['text'];
+				$coid = $_POST['coid'];
+				$cid = $_POST['cid'];
+				$created=$db->fetchRow($db->select('created')->from('table.comments')->where('cid = ?', $cid)->where('coid = ?', $coid));
+				$timeD = (time()-$created['created']);
+				if( $timeD < 60 &&$timeD > 0 ){
+					if($text){
+						$update = $db->update('table.comments')->rows(array('text'=>$text))->where('cid = ?', $cid)->where('coid = ?', $coid);
+						$updateRows = $db->query($update);
+					}else{
+						$delete = $db->delete('table.comments')->where('cid = ?', $cid)->where('coid = ?', $coid);
+						$db->query($delete);
+						$num = $db->fetchRow($db->select('commentsNum')->from('table.contents')->where('cid = ?', $cid));
+						$num = $num['commentsNum']-1;
+						$update = $db->update('table.contents')->rows(array('commentsNum'=>$num))->where('cid = ?', $cid);
+						$db->query($update);
+						$updateRows = "4";
+					}
+				}else{
+					$updateRows="2";
+				}
 					if($updateRows == "1"){
 						$updateRows ='1::text::'.$parser->makeHtml($text);
 					}else if($updateRows == "0"){
 						$updateRows ='0::text::0';
+					}else if($updateRows == "2"){
+						$updateRows ='3::text::0';
+					}else if($updateRows == "4"){
+						$updateRows ='4::text::0';
 					}else{
-						$updateRows ='2::text::0';
+						$updateRows = '2::text::草泥马臭傻逼';
 					}
-				}else{
-					$updateRows = '3::text::草泥马臭傻逼';
-				}
+
               	header( "HTTP/1.1 200 OK" );
-				echo $updateRows;//打印执行结果
+				echo $updateRows;
 			}
 			exit;
 		}
 	}
 }
-
-
 function url($content){
   $content = preg_replace('#<a(.*?) href="([^"]*/)?(([^"/]*)\.[^"]*)"(.*?)>#','<a$1 href="$2$3"$5 target="_blank">', $content);
-  $content = preg_replace('#<img(.*?) src="([^"]*/)?(([^"/]*)\.[^"]*)"(.*?)>#','<div style="max-width:100%;display:inline-block;background:rgb(181, 191, 194) none repeat scroll 0% 0%;border-radius:5px"><img$1 class="ani" data-src="$2$3"></div>', $content);
+  $content = preg_replace('#<img(.*?) src="([^"]*/)?(([^"/]*)\.[^"]*)"(.*?)>#','<i class="ImgBOX"><img$1 class="ani" data-src="$2$3"></i>', $content);
+  $content = preg_replace('/\[img.*?\](.*?)\[\/img\]/s', '<div class="Img">${1}</div>', $content);
+  $content = preg_replace('/\[toc.*?\]/s', '<div id="TOC"></div>', $content);
+  $content = preg_replace('/\[ruby(.*?)\](.*?)\[\/ruby\]/s', '<ruby>${2}<rt>${1}</rt></ruby>', $content);
   return insert_spacing($content);}
+
 function getSubstr($str, $leftStr, $rightStr)
 {
 	$left = strpos($str, $leftStr);
@@ -125,14 +150,14 @@ function getSubstr($str, $leftStr, $rightStr)
 	return substr($str, $left + strlen($leftStr), $right-$left-strlen($leftStr));
 }
 
-function img(){
-	return "data:image/svg+xml,%3Csvg viewBox='0 0 1024 1024' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M811 640V341H213v278l60-56 115 98 226-196 197 175zm85-384v512H128V256h768z' fill='%23999'/%3E%3C/svg%3E";
-}
 function insert_spacing($str) {
   $str = preg_replace('/([\x{4e00}-\x{9fa5}]+)([A-Za-z0-9_]+)/u', '${1} ${2}', $str);
   $str = preg_replace('/([A-Za-z0-9_]+)([\x{4e00}-\x{9fa5}]+)/u', '${1} ${2}', $str);
   return $str;
 }
+/**
+ * 静态缓存类
+ */
 class cacheFile
 {
 	private $_dir;
@@ -162,35 +187,6 @@ class cacheFile
 		}
 	}
 }
-
-function getCatList($a,$b) {
-	if($a){
-		$db = Typecho_Db::get();
-		$items = $db->fetchAll($db->select()->from('table.metas')->where('type = ?','category'));
-		$list = getTree($items,$a,"");
-	    echo "<div>"."<ul><li>".$b.$list."</li></ul></div>";
-	}
-}
-function getTree($data, $id, $i) {
-	$html = '';
-	foreach($data as $k => $v){
-	   if($v['parent'] == $id){
-			$html .= "<li><a href=\"".Helper::options()->siteUrl.$v['slug']."\" class=\"item\">".$v['name']."</a>"; 
-			$html .= getTree($data, $v['mid'],"");
-			$html = $html."</li>";
-		}
-	}
-	return $html ? '<em></em><ul'.$i.'>'.$html.'</ul>' : $html ;
-}
-function getExplode($str){
-	if($str){
-		$arr = explode("；",$str);
-		foreach($arr as $u){
-		    $strarr = explode("，",$u);
-		        getCatList($strarr[0],$strarr[1]);
-		}
-    }
-}
 if(!file_exists($flag)) {
   touch($flag);
 $TheFile = dirname(__FILE__).'/caches/cache.json';
@@ -215,10 +211,53 @@ Typecho_Widget::widget('Widget_Metas_Category_List')->to($category);
 	$output = substr($output,0,strlen($output)-1);
 $data = '['.$output.']';
 if (file_exists($TheFile)) {
-  if ( time() - filemtime( $TheFile) > 600){
+  if ( time() - filemtime( $TheFile) > 1800){
   $cacheFile->cacheData('cache', $data);
   }; //5分钟300秒，时间可以自己调整
 } else {
   $cacheFile->cacheData('cache', $data);
 };
+}
+
+function m($Str){
+  if($Str){
+	$arr = explode("\n",$Str);
+	$array = array();
+	for ($i = 0; $i < count($arr); $i++) {
+		$s = explode(",",$arr[$i]);
+		$array[$i]["id"] = $s[0];
+		$array[$i]["name"] = $s[1];
+		$array[$i]["url"] = $s[2];
+		$array[$i]["mid"] = $s[3];
+		//$array[$i]["target"] = $s[4];
+	};
+	$k = array_filter($array , function($t) use ($a) { return $t['mid'] == "";});
+	foreach($k as $c => $v){
+		if(strstr($v['url'],'h')){
+			$u = "<a href=\"".$v['url']."\">";
+		}else{
+			$u = "<a>";
+		}
+		getCatList($v['id'],$u.$v['name']."</a>",$array);
+	};
+  }
+}
+
+function getCatList($a,$b,$arr){
+	$l = getTree($arr,$a,"");
+	echo ("<ul><li>".$b.$l."</li></ul>");
+}
+function getTree($d, $id, $i) {
+	$h = '';
+	foreach($d as $k => $v){
+		if(intval($v['mid']) == intval($id)){
+			if(strstr($v['url'],'h')){
+				$u = "href=\"".$v['url']."\"";
+			}
+			$h .= "<li><a ".$u." class=\"item\">".$v['name']."</a>"; 
+			$h .= getTree($d, $v['id'],"");
+			$h = $h."</li>";
+		}
+	}
+	return( $h ? '<b></b><ul'.$i.'>'.$h.'</ul>' : $h );
 }
